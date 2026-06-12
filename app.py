@@ -5,7 +5,12 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from gri_analyzer import DISCLOSURE_RULES, analyze_report
+from gri_analyzer import (
+    DISCLOSURE_RULES,
+    analyze_report,
+    count_extractable_text,
+    ocr_pdf_to_searchable_pdf,
+)
 
 
 st.set_page_config(
@@ -336,9 +341,40 @@ if not selected_codes:
     st.warning("請至少選擇一個 GRI 項目。")
     st.stop()
 
+uploaded_bytes = uploaded_file.getvalue()
+extractable_text_count = count_extractable_text(uploaded_bytes)
+
+if extractable_text_count < 50:
+    st.error(
+        "這份 PDF 幾乎沒有可讀文字，可能是掃描檔或圖片型 PDF。"
+        "請先 OCR 轉成可搜尋 PDF，再進行 GRI 檢核。"
+    )
+    st.caption(f"目前可抽取文字：約 {extractable_text_count} 字")
+
+    if st.button("OCR 轉成可搜尋 PDF", type="primary"):
+        try:
+            with st.spinner("正在 OCR 轉檔，頁數較多時可能需要幾分鐘..."):
+                ocr_bytes = ocr_pdf_to_searchable_pdf(uploaded_bytes)
+            st.session_state["ocr_pdf_bytes"] = ocr_bytes
+            st.session_state["ocr_pdf_name"] = uploaded_file.name.replace(".pdf", "_ocr.pdf")
+            st.success("OCR 完成。請下載新的 PDF，再重新上傳檢核。")
+        except RuntimeError as error:
+            st.error(str(error))
+
+    if "ocr_pdf_bytes" in st.session_state:
+        st.download_button(
+            "下載 OCR 後 PDF",
+            st.session_state["ocr_pdf_bytes"],
+            file_name=st.session_state.get("ocr_pdf_name", "ocr_report.pdf"),
+            mime="application/pdf",
+            use_container_width=True,
+        )
+
+    st.stop()
+
 if analyze_clicked:
     with st.spinner("正在解析 PDF、比對 GRI 項目並產出改善清單..."):
-        result = analyze_report(uploaded_file.read(), selected_codes)
+        result = analyze_report(uploaded_bytes, selected_codes)
     st.session_state["analysis_result"] = prepare_results(result)
     st.session_state["analysis_file_name"] = uploaded_file.name
 
