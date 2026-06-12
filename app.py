@@ -347,7 +347,10 @@ if result_df is None:
     st.info("設定完成後，請點擊左側「開始檢核」。")
     st.stop()
 
-file_name = st.session_state.get("analysis_file_name", uploaded_file.name)
+file_name = st.session_state.get(
+    "analysis_file_name",
+    uploaded_file.name if uploaded_file is not None else "uploaded_report.pdf",
+)
 
 render_metrics(result_df)
 
