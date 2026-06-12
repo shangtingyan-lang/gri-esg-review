@@ -93,6 +93,48 @@ def extract_pdf_pages(file_bytes: bytes) -> list[dict[str, object]]:
         ]
 
 
+def count_extractable_text(file_bytes: bytes) -> int:
+    pages = extract_pdf_pages(file_bytes)
+    return sum(len(normalize_text(str(page["text"]))) for page in pages)
+
+
+def ocr_pdf_to_searchable_pdf(
+    file_bytes: bytes,
+    language: str = "chi_tra+eng",
+    dpi: int = 200,
+) -> bytes:
+    try:
+        import fitz
+        import pytesseract
+        from PIL import Image
+        from pypdf import PdfReader, PdfWriter
+    except ImportError as exc:
+        raise RuntimeError("OCR 套件尚未安裝，請確認 requirements.txt 已包含 pytesseract 與 Pillow。") from exc
+
+    source = fitz.open(stream=file_bytes, filetype="pdf")
+    writer = PdfWriter()
+
+    try:
+        zoom = dpi / 72
+        matrix = fitz.Matrix(zoom, zoom)
+        for page in source:
+            pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+            image = Image.open(io.BytesIO(pixmap.tobytes("png")))
+            page_pdf = pytesseract.image_to_pdf_or_hocr(
+                image,
+                extension="pdf",
+                lang=language,
+            )
+            reader = PdfReader(io.BytesIO(page_pdf))
+            writer.add_page(reader.pages[0])
+    except pytesseract.pytesseract.TesseractNotFoundError as exc:
+        raise RuntimeError("找不到 Tesseract OCR。Streamlit Cloud 需要 packages.txt 安裝系統套件。") from exc
+
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
 def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
